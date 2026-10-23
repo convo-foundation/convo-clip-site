@@ -1,2 +1,2 @@
-# cliploop-site
-Live page for Cliploop (published from convo-foundation/cliploop)
+# convo-clip-site
+Live page for Convo Clip (published from convo-foundation/convo-clip)
