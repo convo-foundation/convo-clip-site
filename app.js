@@ -326,8 +326,11 @@ $('endInput').addEventListener('change', (e) => { setEnd(parseFloat(e.target.val
 $('setStart').addEventListener('click', () => { setStart(video.currentTime); scheduleEstimate(); });
 $('setEnd').addEventListener('click', () => { setEnd(video.currentTime); scheduleEstimate(); });
 
-const PLAY = '<path fill="currentColor" d="M8 5v14l11-7z"/>';
-const PAUSE = '<path fill="currentColor" d="M7 5h4v14H7zM13 5h4v14h-4z"/>';
+// Lucide replaces each <i data-lucide> with an svg, so swapping an icon means a fresh <i>.
+function setIcon(el, name) {
+  el.innerHTML = `<i data-lucide="${name}"></i>`;
+  window.lucide?.createIcons({ nameAttr: 'data-lucide' });
+}
 $('playBtn').addEventListener('click', togglePlay);
 video.addEventListener('click', togglePlay);
 function togglePlay() {
@@ -336,8 +339,8 @@ function togglePlay() {
     video.play();
   } else video.pause();
 }
-video.addEventListener('play', () => { $('playIcon').innerHTML = PAUSE; $('playBtn').ariaLabel = 'Pause'; });
-video.addEventListener('pause', () => { $('playIcon').innerHTML = PLAY; $('playBtn').ariaLabel = 'Play'; });
+video.addEventListener('play', () => { setIcon($('playBtn'), 'pause'); $('playBtn').ariaLabel = 'Pause'; });
+video.addEventListener('pause', () => { setIcon($('playBtn'), 'play'); $('playBtn').ariaLabel = 'Play'; });
 
 // Keep the playhead in sync and loop playback inside the trim range.
 (function frameLoop() {
@@ -464,7 +467,7 @@ function renderSettings() {
   $('qualitySel').value = state.webmQuality;
   $('gifOpts').hidden = state.format !== 'gif';
   $('webmOpts').hidden = state.format !== 'webm';
-  $('exportBtn').textContent = `Export ${state.format === 'gif' ? 'GIF' : 'WebM'}`;
+  $('exportLabel').textContent = `Export ${state.format === 'gif' ? 'GIF' : 'WebM'}`;
   for (const row of document.querySelectorAll('.est-row')) row.classList.toggle('on', row.dataset.format === state.format);
 
   if (!state.duration) { $('outInfo').textContent = 'Load a video to get started.'; return; }
@@ -702,7 +705,7 @@ function showResult(blob, format, dims, fps) {
   $('resultMeta').textContent = `${fmtBytes(blob.size)} · ${dims.w} × ${dims.h} · ${fps} fps · ${(state.end - state.start).toFixed(1)} s`;
   $('downloadLink').href = resultUrl;
   $('downloadLink').download = `${state.name}.${ext}`;
-  $('downloadLink').textContent = `Download ${ext.toUpperCase()}`;
+  $('downloadLabel').textContent = `Download ${ext.toUpperCase()}`;
   $('result').hidden = false;
 }
 
