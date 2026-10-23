@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cliploop</title>
+  <meta name="description" content="Turn videos into GIF or WebM loops, entirely in your browser.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35A7.96 7.96 0 0 0 12 4z"/></svg>
+      Cliploop
+    </div>
+    <p class="tagline">Video → GIF or WebM. Everything runs in your browser; videos never leave your device.</p>
+  </header>
+
+  <main class="layout">
+    <section class="workspace">
+      <!-- Empty state -->
+      <div id="empty" class="dropzone">
+        <svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="6" y="10" width="36" height="28" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M21 18v12l10-6z" fill="currentColor"/></svg>
+        <h1>Drop a video here</h1>
+        <p class="muted">MP4, WebM or MOV. Short clips work best.</p>
+        <div class="actions">
+          <label class="btn primary">Choose file<input id="fileInput" type="file" accept="video/*" hidden></label>
+          <button class="btn" id="recCamera" type="button">Film yourself</button>
+          <button class="btn" id="recScreen" type="button">Record screen</button>
+          <!-- On phones and tablets this opens the front camera; works even where in-page capture is blocked. -->
+          <input id="captureInput" type="file" accept="video/*" capture="user" hidden>
+        </div>
+        <p class="small muted" id="camNote" hidden>To film yourself here, open this page on your phone or tablet.</p>
+      </div>
+
+      <!-- Recording -->
+      <div id="recView" class="recview" hidden>
+        <div class="stage live">
+          <video id="liveVideo" playsinline muted autoplay></video>
+          <div class="countdown" id="countdown" aria-live="assertive" hidden></div>
+        </div>
+        <div class="recbar">
+          <span class="recdot" id="recDot" aria-hidden="true"></span>
+          <span id="recLabel">Recording <strong id="recTime">0:00</strong></span>
+          <button class="btn danger" id="recStop" type="button">Stop and edit</button>
+        </div>
+      </div>
+
+      <!-- Editor -->
+      <div id="editor" hidden>
+        <div class="stage">
+          <div class="frame" id="frame">
+            <video id="video" playsinline muted preload="auto"></video>
+            <div class="overlay" id="overlay">
+              <div class="crop" id="crop">
+                <span class="crop-size" id="cropSize"></span>
+                <span class="h nw" data-h="nw"></span><span class="h ne" data-h="ne"></span>
+                <span class="h sw" data-h="sw"></span><span class="h se" data-h="se"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="transport">
+          <button class="icon-btn" id="playBtn" type="button" aria-label="Play">
+            <svg id="playIcon" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+          </button>
+          <span class="time" id="timeNow">0:00.0</span>
+          <div class="timeline" id="timeline">
+            <div class="range" id="range"></div>
+            <div class="handle" id="hStart" role="slider" aria-label="Trim start" tabindex="0"></div>
+            <div class="handle" id="hEnd" role="slider" aria-label="Trim end" tabindex="0"></div>
+            <div class="playhead" id="playhead"></div>
+          </div>
+          <span class="time muted" id="timeDur">0:00.0</span>
+        </div>
+
+        <div class="controls-row">
+          <div class="field-inline">
+            <label for="startInput">Start</label>
+            <input id="startInput" type="number" min="0" step="0.1">
+            <button class="link-btn" id="setStart" type="button">Use playhead</button>
+          </div>
+          <div class="field-inline">
+            <label for="endInput">End</label>
+            <input id="endInput" type="number" min="0" step="0.1">
+            <button class="link-btn" id="setEnd" type="button">Use playhead</button>
+          </div>
+          <span class="muted" id="clipLen"></span>
+        </div>
+
+        <div class="controls-row">
+          <span class="label">Crop</span>
+          <div class="segmented" id="aspectSeg">
+            <button type="button" data-aspect="" class="on">Free</button>
+            <button type="button" data-aspect="1">1:1</button>
+            <button type="button" data-aspect="1.7778">16:9</button>
+            <button type="button" data-aspect="0.5625">9:16</button>
+            <button type="button" data-aspect="1.3333">4:3</button>
+          </div>
+          <button class="link-btn" id="cropReset" type="button">Reset crop</button>
+          <span class="spacer"></span>
+          <button class="link-btn" id="refilmBtn" type="button">Film yourself</button>
+          <button class="link-btn" id="replaceBtn" type="button">Replace video</button>
+        </div>
+      </div>
+      <p class="error" id="sourceError" hidden></p>
+    </section>
+
+    <aside class="panel" id="panel">
+      <h2>Export</h2>
+
+      <div class="field">
+        <span class="label">Format</span>
+        <div class="segmented wide" id="formatSeg">
+          <button type="button" data-format="gif" class="on">GIF</button>
+          <button type="button" data-format="webm">WebM</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label" for="presetSel">Preset</label>
+        <select id="presetSel">
+          <option value="custom">Custom</option>
+          <option value="email-gif">Email-safe GIF (480 px, 10 fps)</option>
+          <option value="docs-gif">Docs and bug reports GIF (640 px, 12 fps)</option>
+          <option value="web-webm">Web loop WebM (720 px, 30 fps)</option>
+          <option value="sign-webm">Sign language WebM (640 px, 30 fps, high quality)</option>
+        </select>
+      </div>
+
+      <div class="grid2">
+        <div class="field">
+          <label class="label" for="fpsSel">Frame rate</label>
+          <select id="fpsSel">
+            <option>5</option><option>8</option><option>10</option><option selected>12</option>
+            <option>15</option><option>20</option><option>24</option><option>30</option><option>60</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="label" for="widthSel">Width</label>
+          <select id="widthSel">
+            <option value="240">240 px</option><option value="320">320 px</option>
+            <option value="480" selected>480 px</option><option value="640">640 px</option>
+            <option value="720">720 px</option><option value="960">960 px</option>
+            <option value="1280">1280 px</option><option value="0">Original</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field" id="gifOpts">
+        <label class="label" for="colorsSel">Colors</label>
+        <select id="colorsSel">
+          <option value="256" selected>256 (best)</option><option value="128">128</option>
+          <option value="64">64</option><option value="32">32 (smallest)</option>
+        </select>
+      </div>
+      <div class="field" id="webmOpts" hidden>
+        <label class="label" for="qualitySel">Quality</label>
+        <select id="qualitySel">
+          <option value="low">Low (smallest)</option><option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+
+      <p class="hint" id="outInfo"></p>
+      <p class="hint warn" id="warnInfo" hidden></p>
+
+      <div class="estimate" id="estimate">
+        <div class="est-head"><span class="label">Estimated size</span><span class="muted small" id="estStatus"></span></div>
+        <div class="est-row" data-format="gif">
+          <span class="est-name">GIF</span><div class="bar"><i id="gifBar"></i></div><span class="est-val" id="gifEst">–</span>
+        </div>
+        <div class="est-row" data-format="webm">
+          <span class="est-name">WebM</span><div class="bar"><i id="webmBar"></i></div><span class="est-val" id="webmEst">–</span>
+        </div>
+        <p class="small muted" id="estNote"></p>
+      </div>
+
+      <button class="btn primary block" id="exportBtn" type="button" disabled>Export GIF</button>
+
+      <div class="progress" id="progress" hidden>
+        <div class="bar"><i id="progBar"></i></div>
+        <div class="prog-row"><span class="small muted" id="progText"></span><button class="link-btn" id="cancelBtn" type="button">Cancel</button></div>
+      </div>
+      <p class="error" id="exportError" hidden></p>
+
+      <div class="result" id="result" hidden>
+        <div class="result-media" id="resultMedia"></div>
+        <p class="small" id="resultMeta"></p>
+        <a class="btn primary block" id="downloadLink" download>Download</a>
+        <p class="error" id="saveMsg" hidden></p>
+      </div>
+    </aside>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
