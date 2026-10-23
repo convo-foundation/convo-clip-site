@@ -1,0 +1,18 @@
+{
+  "name": "Convo Clip",
+  "short_name": "Convo Clip",
+  "description": "Turn a video into a GIF or WebM loop, entirely in your browser.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fffbf9",
+  "theme_color": "#fffbf9",
+  "icons": [
+    {
+      "src": "https://brand.convo.io/cdn/v1/assets/app-icons/webflow/Convo_Symbol_Evergreen_258.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

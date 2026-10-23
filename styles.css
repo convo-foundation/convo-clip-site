@@ -322,7 +322,8 @@ select:disabled, input:disabled { opacity: var(--opacity-muted); }
   pointer-events: none;
 }
 .recbar { display: flex; align-items: center; gap: var(--felt-space-xs); margin-top: var(--felt-space-xs); font-size: var(--felt-text-s-size); }
-.recbar .btn { margin-left: auto; }
+.recbar #recDiscard { margin-left: auto; }
+.recbar #recDiscard[hidden] + .btn { margin-left: auto; }
 .recdot { width: 12px; height: 12px; border-radius: var(--radius-pill); background: var(--status-critical-bg-strong); animation: pulse 1.2s infinite; }
 .recdot.idle { animation: none; background: var(--felt-text-disabled); }
 @keyframes pulse { 50% { opacity: .3; } }
@@ -359,6 +360,60 @@ select:disabled, input:disabled { opacity: var(--opacity-muted); }
   background: repeating-conic-gradient(var(--felt-fill) 0 25%, var(--felt-raised) 0 50%) 0 0 / 16px 16px;
 }
 .result-media img, .result-media video { display: block; max-width: 100%; max-height: 260px; }
+
+/* ---------- Desktop app dialog ---------- */
+.install-btn { margin-left: auto; }
+dialog.sheet {
+  width: min(560px, calc(100% - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: var(--felt-space-m);
+  border: 0;
+  border-radius: var(--felt-radius-l);
+  background: var(--felt-raised);
+  color: var(--felt-text);
+  box-shadow: var(--felt-shadow-l);
+}
+dialog.sheet[open] {
+  display: grid;
+  gap: var(--felt-space-xs);
+  animation: rise var(--felt-motion-duration-large) var(--felt-motion-easing-large);
+}
+/* Base Black at the brand's scrim opacity; ::backdrop can't always read page variables. */
+dialog.sheet::backdrop { background: rgb(24 27 26 / 0.6); }
+@keyframes rise { from { opacity: 0; transform: scale(var(--felt-popup-scale, 0.96)); } }
+.sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--felt-space-xs); }
+.sheet h2 {
+  margin: 0;
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--felt-text-l-size);
+  line-height: var(--felt-text-l-line);
+  letter-spacing: var(--felt-text-l-tracking);
+  text-wrap: balance;
+}
+.sheet h3 {
+  margin: var(--space-tight) 0 0;
+  font-family: var(--font-family-display);
+  font-weight: var(--font-weight-medium);
+  font-size: var(--felt-text-s-size);
+  line-height: var(--felt-text-s-line);
+}
+.sheet .lead { margin: 0; color: var(--felt-text-muted); font-size: var(--felt-text-s-size); line-height: var(--felt-text-s-line); }
+.icon-only { padding: 6px; min-width: 36px; justify-content: center; }
+.segmented button svg.lucide { width: 16px; height: 16px; }
+.segmented button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.os-panel { display: grid; gap: var(--space-tight); }
+.steps {
+  margin: 0;
+  padding-left: 1.4em;
+  display: grid;
+  gap: var(--space-tight);
+  font-size: var(--felt-text-s-size);
+  line-height: var(--felt-text-s-line);
+}
+.steps strong { font-weight: var(--font-weight-medium); }
+.steps .help { display: inline-block; margin-top: 4px; }
 
 /* ---------- Footer ---------- */
 .app-version {

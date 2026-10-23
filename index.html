@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Convo Clip</title>
   <meta name="description" content="Turn a video into a GIF or WebM loop, entirely in your browser.">
+  <!-- Installable as a desktop app; icons come from the brand CDN -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#fffbf9">
+  <link rel="icon" href="https://brand.convo.io/cdn/v1/assets/app-icons/webflow/Convo_Symbol_Evergreen_32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="https://brand.convo.io/cdn/v1/assets/app-icons/webflow/Convo_Symbol_Evergreen_258.png">
   <!-- Convo brand tokens and fonts: linked, never copied -->
   <link rel="stylesheet" href="https://brand.convo.io/cdn/v1/brand.css">
   <link rel="stylesheet" href="styles.css">
@@ -15,7 +20,57 @@
     <img class="wordmark" src="https://brand.convo.io/cdn/v1/assets/logo/wordmark/Convo_Wordmark_Evergreen.svg" alt="Convo">
     <span class="name">Clip</span>
     <p class="tagline">Turn a video into a GIF or WebM loop. Everything happens in your browser, so your video stays on your device.</p>
+    <button class="link-btn install-btn" id="installBtn" type="button" hidden><i data-lucide="monitor-down"></i><span>Get the desktop app</span></button>
   </header>
+
+  <dialog class="sheet" id="installDialog" aria-labelledby="installTitle">
+    <div class="sheet-head">
+      <h2 id="installTitle">Save Convo Clip as a desktop app</h2>
+      <button class="link-btn icon-only" id="installClose" type="button" aria-label="Close"><i data-lucide="x"></i></button>
+    </div>
+    <p class="lead">Open Convo Clip from your Dock or taskbar, in its own window, like any other app. It still runs in your browser, so your videos stay on your computer.</p>
+
+    <div class="segmented wide" id="osSeg" role="radiogroup" aria-label="Your computer">
+      <button type="button" role="radio" data-os="mac"><i data-lucide="laptop"></i><span>Mac</span></button>
+      <button type="button" role="radio" data-os="windows"><i data-lucide="monitor"></i><span>Windows PC</span></button>
+    </div>
+
+    <button class="btn primary block" id="installNow" type="button" hidden><i data-lucide="monitor-down"></i><span>Install Convo Clip now</span></button>
+
+    <div class="os-panel" data-os-panel="mac">
+      <h3>Chrome or Edge</h3>
+      <ol class="steps">
+        <li>Select the <strong>Install</strong> icon at the right end of the address bar.<br>
+          <span class="help">No icon? In Chrome, open the <strong>⋮</strong> menu, then <strong>Cast, save, and share</strong> &gt; <strong>Install page as app</strong>. In Edge, open the <strong>…</strong> menu, then <strong>Apps</strong> &gt; <strong>Install this site as an app</strong>.</span></li>
+        <li>Select <strong>Install</strong>.</li>
+        <li>To keep it in your Dock, Control-click the Convo Clip icon in the Dock, then choose <strong>Options</strong> &gt; <strong>Keep in Dock</strong>.</li>
+      </ol>
+      <h3>Safari</h3>
+      <ol class="steps">
+        <li>Choose <strong>File</strong> &gt; <strong>Add to Dock</strong>. This needs macOS Sonoma or later.</li>
+        <li>Select <strong>Add</strong>. Convo Clip appears in your Dock and in your Applications folder.</li>
+      </ol>
+      <p class="help">WebM export works best in Chrome or Edge.</p>
+    </div>
+
+    <div class="os-panel" data-os-panel="windows">
+      <h3>Microsoft Edge</h3>
+      <ol class="steps">
+        <li>Open the <strong>…</strong> menu, then <strong>Apps</strong> &gt; <strong>Install this site as an app</strong>.</li>
+        <li>Select <strong>Install</strong>.</li>
+        <li>When asked, choose <strong>Pin to taskbar</strong> or <strong>Pin to Start</strong>, then select <strong>Allow</strong>.</li>
+      </ol>
+      <h3>Google Chrome</h3>
+      <ol class="steps">
+        <li>Select the <strong>Install</strong> icon at the right end of the address bar.<br>
+          <span class="help">No icon? Open the <strong>⋮</strong> menu, then <strong>Cast, save, and share</strong> &gt; <strong>Install page as app</strong>.</span></li>
+        <li>Select <strong>Install</strong>.</li>
+        <li>To pin it, right-click Convo Clip in the taskbar and choose <strong>Pin to taskbar</strong>.</li>
+      </ol>
+    </div>
+
+    <p class="help">To remove it later, open Convo Clip, open the menu in its title bar, then choose <strong>Uninstall</strong>. In Safari, drag it out of the Dock and delete it from Applications.</p>
+  </dialog>
 
   <main class="layout">
     <section class="workspace" aria-label="Video">
@@ -43,6 +98,7 @@
         <div class="recbar">
           <span class="recdot" id="recDot" aria-hidden="true"></span>
           <span id="recLabel">Recording <strong id="recTime">0:00</strong></span>
+          <button class="link-btn" id="recDiscard" type="button" hidden><i data-lucide="x"></i><span>Discard</span></button>
           <button class="btn danger" id="recStop" type="button">Stop and edit</button>
         </div>
       </div>
@@ -102,6 +158,7 @@
           <span class="row-actions">
             <button class="link-btn" id="refilmBtn" type="button"><i data-lucide="camera"></i><span>Film yourself</span></button>
             <button class="link-btn" id="replaceBtn" type="button"><i data-lucide="refresh-cw"></i><span>Replace video</span></button>
+            <button class="link-btn" id="startOverBtn" type="button"><i data-lucide="x"></i><span>Start over</span></button>
           </span>
         </div>
       </div>
@@ -195,7 +252,7 @@
     </aside>
   </main>
 
-  <p class="app-version">Version v2 · Oct 23, 2026 3:18 PM CT</p>
+  <p class="app-version">Version v3 · Oct 23, 2026 5:21 PM CT</p>
   <script>{ const v = document.querySelector('.app-version'); if (v.textContent.includes('__')) v.textContent = 'Local preview (not published)'; }</script>
   <script>window.lucide?.createIcons();</script>
   <script type="module" src="app.js"></script>

@@ -70,7 +70,7 @@ async function ensureDuration(v) {
   v.currentTime = 0;
 }
 
-async function loadSource(blob, name) {
+async function loadSource(blob, name, fromRecording = false) {
   hideError($('sourceError'));
   const url = URL.createObjectURL(blob);
   try {
@@ -86,6 +86,7 @@ async function loadSource(blob, name) {
   if (state.url) URL.revokeObjectURL(state.url);
   state.url = url;
   state.name = (name || 'clip').replace(/\.[^.]+$/, '') || 'clip';
+  state.fromRecording = fromRecording;
   state.duration = video.duration;
   state.vw = video.videoWidth;
   state.vh = video.videoHeight;
@@ -113,6 +114,39 @@ $('fileInput').addEventListener('change', (e) => {
 });
 $('replaceBtn').addEventListener('click', () => $('fileInput').click());
 
+// Clears the loaded video and any export, and shows the "Drop a video here" screen again.
+function startOver() {
+  clearTimeout(estimateTimer);
+  estimateAbort?.abort();
+  video.pause();
+  for (const v of [video, work]) { v.removeAttribute('src'); v.load(); }
+  if (state.url) URL.revokeObjectURL(state.url);
+  if (resultUrl) URL.revokeObjectURL(resultUrl);
+  Object.assign(state, { url: null, duration: 0, start: 0, end: 0, fromRecording: false });
+  resultUrl = null;
+  resultBlob = null;
+
+  $('result').hidden = true;
+  $('resultMedia').replaceChildren();
+  $('exportBtn').disabled = true;
+  $('gifEst').textContent = $('webmEst').textContent = '–';
+  $('gifBar').style.width = $('webmBar').style.width = '0';
+  $('estStatus').textContent = $('estNote').textContent = '';
+  $('warnInfo').hidden = true;
+  for (const el of ['sourceError', 'exportError', 'saveMsg']) hideError($(el));
+  $('editor').hidden = true;
+  $('recView').hidden = true;
+  $('empty').hidden = false;
+  renderSettings();
+}
+
+$('startOverBtn').addEventListener('click', () => {
+  if (state.busy) return;
+  // A recording exists only in this tab, so check before throwing it away.
+  if (state.fromRecording && !resultBlob && !confirm('Discard this recording? It isn’t saved anywhere.')) return;
+  startOver();
+});
+
 let dragDepth = 0;
 window.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
 window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
@@ -131,6 +165,7 @@ const COUNTDOWN = 3; // seconds before a self-recording starts
 let recorder = null;
 let recTimer = null;
 let countdownCancel = null;
+let discardRecording = false;
 
 // In-page capture needs these APIs, and the hosted artifact viewer (window.claude) refuses it.
 const canCapture = !inViewer && !!navigator.mediaDevices?.getUserMedia && !!window.MediaRecorder;
@@ -146,6 +181,7 @@ function showRecView(label) {
 
 function backToEmpty() {
   $('recView').hidden = true;
+  $('recDiscard').hidden = true;
   $('empty').hidden = !!state.duration;
   $('editor').hidden = !state.duration;
 }
@@ -215,15 +251,18 @@ async function startRecording(kind) {
     live.srcObject = null;
     const type = recorder.mimeType || 'video/webm';
     recorder = null;
+    $('recDiscard').hidden = true;
     const blob = new Blob(chunks, { type });
     const ext = type.includes('mp4') ? 'mp4' : 'webm';
-    if (blob.size) loadSource(blob, `${kind === 'camera' ? 'selfie' : 'screen'}-recording.${ext}`);
+    if (blob.size && !discardRecording) loadSource(blob, `${kind === 'camera' ? 'selfie' : 'screen'}-recording.${ext}`, true);
     else backToEmpty();
+    discardRecording = false;
   };
   // The browser's own "Stop sharing" button ends the track; treat it like our Stop.
   stream.getVideoTracks()[0].addEventListener('ended', () => recorder?.state === 'recording' && recorder.stop());
 
   showRecView('Recording <strong id="recTime">0:00</strong>');
+  $('recDiscard').hidden = false;
   const t0 = performance.now();
   recTimer = setInterval(() => { $('recTime').textContent = fmtTime((performance.now() - t0) / 1000, false); }, 250);
   recorder.start(250);
@@ -239,6 +278,11 @@ $('captureInput').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (file) loadSource(file, file.name || 'selfie.mp4');
   e.target.value = '';
+});
+$('recDiscard').addEventListener('click', () => {
+  if (recorder?.state !== 'recording') return;
+  discardRecording = true;
+  recorder.stop();
 });
 $('recStop').addEventListener('click', () => {
   if (countdownCancel) countdownCancel();
@@ -616,9 +660,7 @@ function renderEstimate({ gif, webm }) {
   $('webmEst').textContent = webm ? `≈ ${fmtBytes(webm)}` : 'n/a';
   $('webmBar').style.width = webm ? `${(webm / max) * 100}%` : '0';
   $('estStatus').textContent = '';
-  if (webm && gif > webm * 1.5) $('estNote').textContent = `WebM is about ${Math.round(gif / webm)}× smaller here, but GIF plays in more places (email, slides).`;
-  else if (webm) $('estNote').textContent = 'Both formats come out at a similar size for this clip.';
-  else $('estNote').textContent = 'WebM encoding isn’t available in this browser.';
+  $('estNote').textContent = webm ? '' : 'WebM encoding isn’t available in this browser.';
 }
 
 /* ---------- Export ---------- */
@@ -729,6 +771,65 @@ $('downloadLink').addEventListener('click', async (e) => {
 
 $('exportBtn').addEventListener('click', exportClip);
 $('cancelBtn').addEventListener('click', () => exportAbort?.abort());
+
+/* ---------- Desktop app ---------- */
+
+const INSTALL_SEEN_KEY = 'convo-clip:install-tip-seen';
+const installDialog = $('installDialog');
+const installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+let installPrompt = null;
+
+function setOs(os) {
+  for (const b of $('osSeg').children) {
+    const on = b.dataset.os === os;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', String(on));
+  }
+  for (const p of installDialog.querySelectorAll('[data-os-panel]')) p.hidden = p.dataset.osPanel !== os;
+}
+
+function openInstallDialog() {
+  if (installDialog.open) return;
+  installDialog.showModal();
+  try { localStorage.setItem(INSTALL_SEEN_KEY, '1'); } catch { /* storage blocked: the tip may show again */ }
+}
+
+const platform = navigator.userAgentData?.platform || navigator.platform || navigator.userAgent;
+setOs(/mac/i.test(platform) ? 'mac' : 'windows');
+
+$('osSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (b) setOs(b.dataset.os);
+});
+$('installBtn').addEventListener('click', openInstallDialog);
+$('installClose').addEventListener('click', () => installDialog.close());
+// A click on the backdrop lands on the dialog element itself.
+installDialog.addEventListener('click', (e) => { if (e.target === installDialog) installDialog.close(); });
+
+// Chrome and Edge can install straight from the page; keep their prompt for our own button.
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  $('installNow').hidden = false;
+});
+$('installNow').addEventListener('click', async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  const { outcome } = await installPrompt.userChoice;
+  installPrompt = null;
+  $('installNow').hidden = true;
+  if (outcome === 'accepted') installDialog.close();
+});
+window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; });
+
+// The steps are for computers, and there's nothing to show inside the installed app.
+if (!installed && !touchDevice) {
+  $('installBtn').hidden = false;
+  let seen = false;
+  try { seen = localStorage.getItem(INSTALL_SEEN_KEY) === '1'; } catch { seen = true; }
+  // First visit only: pop the tip in once the page has settled, unless work has started.
+  if (!seen) setTimeout(() => { if (!state.duration && $('recView').hidden) openInstallDialog(); }, 1500);
+}
 
 /* ---------- Errors ---------- */
 
