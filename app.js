@@ -98,6 +98,7 @@ async function loadSource(blob, name, fromRecording = false) {
   $('empty').hidden = true;
   $('recView').hidden = true;
   $('editor').hidden = false;
+  document.body.classList.add('has-video');
   $('exportBtn').disabled = false;
   $('result').hidden = true;
   video.currentTime = 0;
@@ -137,7 +138,9 @@ function startOver() {
   $('editor').hidden = true;
   $('recView').hidden = true;
   $('empty').hidden = false;
+  document.body.classList.remove('has-video');
   renderSettings();
+  window.scrollTo({ top: 0 });
 }
 
 $('startOverBtn').addEventListener('click', () => {
@@ -289,7 +292,10 @@ $('recStop').addEventListener('click', () => {
   else if (recorder?.state === 'recording') recorder.stop();
 });
 
-if (!canCapture || !navigator.mediaDevices?.getDisplayMedia) $('recScreen').hidden = true;
+// There's nothing to drag a file from on a phone or tablet.
+if (touchDevice) $('emptyTitle').textContent = 'Add a video';
+// Phones and tablets can't share their screen with a web page, even where the API exists.
+if (!canCapture || touchDevice || !navigator.mediaDevices?.getDisplayMedia) $('recScreen').hidden = true;
 if (!canCapture && !touchDevice) {
   $('recCamera').hidden = true;
   $('refilmBtn').hidden = true;
@@ -352,6 +358,10 @@ $('timeline').addEventListener('pointerup', () => {
   if (trimDrag === 'start' || trimDrag === 'end') scheduleEstimate();
   trimDrag = null;
 });
+$('timeline').addEventListener('pointercancel', () => {
+  if (trimDrag === 'start' || trimDrag === 'end') scheduleEstimate();
+  trimDrag = null;
+});
 
 for (const [id, set] of [['hStart', setStart], ['hEnd', setEnd]]) {
   $(id).addEventListener('keydown', (e) => {
@@ -376,7 +386,6 @@ function setIcon(el, name) {
   window.lucide?.createIcons({ nameAttr: 'data-lucide' });
 }
 $('playBtn').addEventListener('click', togglePlay);
-video.addEventListener('click', togglePlay);
 function togglePlay() {
   if (video.paused) {
     if (video.currentTime < state.start || video.currentTime >= state.end - 0.05) video.currentTime = state.start;
@@ -457,22 +466,32 @@ function resizeCrop(handle, px, py, c) {
 
 let cropDrag = null;
 const overlay = $('overlay');
+const TAP_SLOP = 6; // px a finger or mouse can wander and still count as a tap
+let cropDragEndedAt = 0; // the click that follows a drag must not also play or pause
+
 overlay.addEventListener('pointerdown', (e) => {
-  if (state.busy) return;
-  if (!$('crop').contains(e.target)) { togglePlay(); return; }
-  e.preventDefault();
-  overlay.setPointerCapture(e.pointerId);
+  if (state.busy || !$('crop').contains(e.target)) return; // taps outside the box play/pause on click
   const r = $('frame').getBoundingClientRect();
+  const mode = e.target.dataset.h || 'move';
+  // A full-frame box can't move, so leave the gesture to the browser and let a swipe scroll the page.
+  const passive = mode === 'move' && $('crop').classList.contains('full');
+  if (!passive) {
+    e.preventDefault();
+    overlay.setPointerCapture(e.pointerId);
+  }
   cropDrag = {
-    mode: e.target.dataset.h || 'move',
+    mode,
+    passive,
     r,
+    x0: e.clientX,
+    y0: e.clientY,
     px: (e.clientX - r.left) / r.width,
     py: (e.clientY - r.top) / r.height,
     c: { ...state.crop },
   };
 });
 overlay.addEventListener('pointermove', (e) => {
-  if (!cropDrag) return;
+  if (!cropDrag || cropDrag.passive) return;
   const { r, c } = cropDrag;
   const px = clamp((e.clientX - r.left) / r.width, 0, 1);
   const py = clamp((e.clientY - r.top) / r.height, 0, 1);
@@ -483,9 +502,19 @@ overlay.addEventListener('pointermove', (e) => {
   }
   renderCrop();
 });
-overlay.addEventListener('pointerup', () => {
-  if (cropDrag) scheduleEstimate();
+overlay.addEventListener('pointerup', (e) => {
+  if (!cropDrag) return;
+  const tapped = cropDrag.mode === 'move' && Math.hypot(e.clientX - cropDrag.x0, e.clientY - cropDrag.y0) < TAP_SLOP;
   cropDrag = null;
+  cropDragEndedAt = performance.now();
+  if (tapped) togglePlay();
+  else scheduleEstimate();
+});
+// The browser took the gesture over (usually a scroll); nothing was changed.
+overlay.addEventListener('pointercancel', () => { cropDrag = null; });
+overlay.addEventListener('click', (e) => {
+  if (performance.now() - cropDragEndedAt < 400) return;
+  if (!state.busy && !$('crop').contains(e.target)) togglePlay();
 });
 
 /* ---------- Settings ---------- */
@@ -733,13 +762,21 @@ function showResult(blob, format, dims, fps) {
   hideError($('saveMsg'));
   const media = $('resultMedia');
   media.replaceChildren();
+  // On a phone the result lands below the fold. Scroll once the preview has its size, so the
+  // Download button ends up on screen rather than being pushed down by the image.
+  const reveal = () => $('downloadLink').scrollIntoView({
+    behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    block: 'nearest',
+  });
   if (format === 'gif') {
     const img = new Image();
+    img.onload = reveal;
     img.src = resultUrl;
     img.alt = 'Exported GIF preview';
     media.append(img);
   } else {
     const v = document.createElement('video');
+    v.addEventListener('loadeddata', reveal, { once: true });
     Object.assign(v, { src: resultUrl, autoplay: true, loop: true, muted: true, playsInline: true });
     media.append(v);
   }

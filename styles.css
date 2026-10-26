@@ -236,8 +236,12 @@ select:disabled, input:disabled { opacity: var(--opacity-muted); }
   overflow: hidden;
 }
 .stage video { display: block; max-width: 100%; max-height: 62vh; }
-.frame { position: relative; line-height: 0; overflow: hidden; max-width: 100%; }
-.overlay { position: absolute; inset: 0; touch-action: none; }
+/* Overflow stays visible so corner handles on the video's edge can still be grabbed;
+   the stage (overflow hidden) clips the dimming around the crop box. */
+.frame { position: relative; line-height: 0; max-width: 100%; }
+/* Vertical swipes on the video still scroll the page; only an actual crop box and its corners capture touch. */
+.overlay { position: absolute; inset: 0; touch-action: pan-y; }
+.crop:not(.full), .crop .h { touch-action: none; }
 /* Crop marks sit on video, so they use the fixed base colours rather than theme colours. */
 .crop {
   position: absolute;
@@ -414,6 +418,41 @@ dialog.sheet::backdrop { background: rgb(24 27 26 / 0.6); }
 }
 .steps strong { font-weight: var(--font-weight-medium); }
 .steps .help { display: inline-block; margin-top: 4px; }
+
+/* ---------- Touch and small screens ---------- */
+/* Fingers need about 44px to hit; the extra area is invisible and belongs to the handle. */
+.handle::before { content: ""; position: absolute; inset: -6px -15px; }
+/* ...but it must not widen the page when a handle sits at the very end. */
+.transport { overflow-x: clip; overflow-y: visible; }
+@media (pointer: coarse) {
+  .crop .h::before { content: ""; position: absolute; inset: -14px; }
+}
+
+@media (max-width: 960px) {
+  /* No video yet: the export settings have nothing to act on, so keep the start screen alone. */
+  body:not(.has-video) .panel { display: none; }
+  .stage video { max-height: 48vh; }
+  .dropzone { min-height: 0; padding: var(--felt-space-l) 16px; }
+}
+
+@media (max-width: 600px) {
+  .tagline { font-size: var(--felt-text-xxs-size); line-height: var(--felt-text-xxs-line); }
+  /* Play and times on one line, the timeline full width beneath them. */
+  .transport { flex-wrap: wrap; row-gap: var(--space-tight); }
+  .transport .timeline { order: 3; flex-basis: 100%; }
+  #timeDur { margin-left: auto; }
+  /* Crop: label and reset on one line, ratios full width beneath. */
+  .crop-row { display: grid; grid-template-columns: 1fr auto; row-gap: var(--space-tight); }
+  .crop-row .segmented { grid-column: 1 / -1; grid-row: 2; display: grid; grid-auto-columns: 1fr; }
+  .crop-row .segmented button { padding: 6px 4px; }
+  /* Video actions as three equal tiles, icon over label. */
+  .controls-row .spacer { display: none; }
+  .row-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-tight); width: 100%; }
+  .row-actions .link-btn { flex-direction: column; gap: 4px; justify-content: center; padding: 10px 4px; background: var(--felt-fill); white-space: nowrap; font-size: var(--felt-text-xs-size); }
+  .row-actions .link-btn[hidden] { display: none; }
+  .recbar { flex-wrap: wrap; }
+  .recbar .btn.danger { flex-basis: 100%; margin-left: 0; }
+}
 
 /* ---------- Footer ---------- */
 .app-version {

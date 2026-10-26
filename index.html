@@ -77,7 +77,7 @@
       <!-- Empty state -->
       <div id="empty" class="dropzone">
         <i data-lucide="clapperboard" class="hero-icon"></i>
-        <h1>Drop a video here</h1>
+        <h1 id="emptyTitle">Drop a video here</h1>
         <p class="muted">MP4, WebM or MOV. Short clips work best.</p>
         <div class="actions">
           <label class="btn primary" tabindex="0"><i data-lucide="upload"></i><span>Choose file</span><input id="fileInput" type="file" accept="video/*" hidden></label>
@@ -133,18 +133,18 @@
         <div class="controls-row">
           <div class="field-inline">
             <label for="startInput">Start</label>
-            <input id="startInput" type="number" min="0" step="0.1">
+            <input id="startInput" type="number" inputmode="decimal" min="0" step="0.1">
             <button class="link-btn" id="setStart" type="button">Use playhead</button>
           </div>
           <div class="field-inline">
             <label for="endInput">End</label>
-            <input id="endInput" type="number" min="0" step="0.1">
+            <input id="endInput" type="number" inputmode="decimal" min="0" step="0.1">
             <button class="link-btn" id="setEnd" type="button">Use playhead</button>
           </div>
           <span class="muted" id="clipLen"></span>
         </div>
 
-        <div class="controls-row">
+        <div class="controls-row crop-row">
           <span class="label">Crop</span>
           <div class="segmented" id="aspectSeg">
             <button type="button" data-aspect="" class="on">Free</button>
@@ -154,6 +154,9 @@
             <button type="button" data-aspect="1.3333">4:3</button>
           </div>
           <button class="link-btn" id="cropReset" type="button">Reset crop</button>
+        </div>
+
+        <div class="controls-row">
           <span class="spacer"></span>
           <span class="row-actions">
             <button class="link-btn" id="refilmBtn" type="button"><i data-lucide="camera"></i><span>Film yourself</span></button>
@@ -252,7 +255,7 @@
     </aside>
   </main>
 
-  <p class="app-version">Version v3 · Oct 23, 2026 5:21 PM CT</p>
+  <p class="app-version">Version v4 · Oct 25, 2026 7:54 PM CT</p>
   <script>{ const v = document.querySelector('.app-version'); if (v.textContent.includes('__')) v.textContent = 'Local preview (not published)'; }</script>
   <script>window.lucide?.createIcons();</script>
   <script type="module" src="app.js"></script>
