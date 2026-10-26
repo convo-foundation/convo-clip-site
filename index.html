@@ -249,13 +249,15 @@
       <div class="result" id="result" hidden>
         <div class="result-media" id="resultMedia"></div>
         <p class="help" id="resultMeta"></p>
+        <button class="btn primary block" id="savePhotosBtn" type="button" hidden><i data-lucide="image-down"></i><span>Save to Photos</span></button>
+        <p class="help" id="savePhotosHint" hidden></p>
         <a class="btn primary block" id="downloadLink" download><i data-lucide="download"></i><span id="downloadLabel">Download</span></a>
         <p class="error" id="saveMsg" hidden></p>
       </div>
     </aside>
   </main>
 
-  <p class="app-version">Version v4 · Oct 25, 2026 7:54 PM CT</p>
+  <p class="app-version">Version v5 · Oct 25, 2026 8:13 PM CT</p>
   <script>{ const v = document.querySelector('.app-version'); if (v.textContent.includes('__')) v.textContent = 'Local preview (not published)'; }</script>
   <script>window.lucide?.createIcons();</script>
   <script type="module" src="app.js"></script>

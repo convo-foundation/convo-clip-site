@@ -784,9 +784,58 @@ function showResult(blob, format, dims, fps) {
   $('resultMeta').textContent = `${fmtBytes(blob.size)} · ${dims.w} × ${dims.h} · ${fps} fps · ${(state.end - state.start).toFixed(1)} s`;
   $('downloadLink').href = resultUrl;
   $('downloadLink').download = `${state.name}.${ext}`;
-  $('downloadLabel').textContent = `Download ${ext.toUpperCase()}`;
+  $('downloadLabel').textContent = `Download ${format === 'gif' ? 'GIF' : 'WebM'}`;
+  setupSaveToPhotos(blob, format, `${state.name}.${ext}`);
   $('result').hidden = false;
 }
+
+/* ---------- Save to Photos (phones) ---------- */
+
+// A download on a phone goes to Files or Drive. The share menu is the web's only route to the
+// photo library: on iPhone it offers "Save Image" or "Save Video", on Android the photos app.
+// iPadOS reports itself as a Mac, so a touch-capable "Mac" counts too.
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+let shareFile = null;
+
+function setupSaveToPhotos(blob, format, filename) {
+  const ios = isIOS();
+  const btn = $('savePhotosBtn');
+  const hint = $('savePhotosHint');
+  shareFile = new File([blob], filename, { type: blob.type });
+  let canShare = false;
+  try { canShare = touchDevice && !!navigator.canShare?.({ files: [shareFile] }); } catch { canShare = false; }
+
+  if (canShare && ios && format === 'webm') {
+    // Photos on iPhone can't store WebM; saving would only offer Files.
+    btn.hidden = true;
+    hint.hidden = false;
+    hint.textContent = 'iPhone Photos can’t store WebM videos. To save to Photos, export as GIF.';
+  } else if (canShare) {
+    btn.hidden = false;
+    hint.hidden = false;
+    hint.textContent = ios
+      ? `In the menu that opens, choose ${format === 'gif' ? 'Save Image' : 'Save Video'}.`
+      : 'In the menu that opens, choose your photos or gallery app.';
+  } else {
+    btn.hidden = true;
+    hint.hidden = true;
+  }
+  // When Save to Photos is the main way out, the download becomes the quieter option.
+  $('downloadLink').classList.toggle('primary', btn.hidden);
+  $('downloadLink').classList.toggle('secondary', !btn.hidden);
+  $('downloadLabel').textContent = btn.hidden ? `Download ${format === 'gif' ? 'GIF' : 'WebM'}` : 'Save to Files';
+}
+
+$('savePhotosBtn').addEventListener('click', async () => {
+  if (!shareFile) return;
+  hideError($('saveMsg'));
+  try {
+    await navigator.share({ files: [shareFile] });
+  } catch (err) {
+    if (err?.name === 'AbortError') return; // closed the menu without choosing
+    showError($('saveMsg'), 'Couldn’t open the save menu. Use Save to Files instead.');
+  }
+});
 
 // In the artifact viewer, download links are inert; files go through the downloads capability.
 $('downloadLink').addEventListener('click', async (e) => {
