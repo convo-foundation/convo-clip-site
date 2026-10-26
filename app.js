@@ -8,6 +8,8 @@ const abortError = () => new DOMException('Cancelled', 'AbortError');
 const MIN_CLIP = 0.1;    // seconds
 const MIN_CROP = 0.05;   // fraction of the frame
 const LONG_CLIP = 15;    // seconds before we warn about size
+const CORNER_RADIUS = 20; // px on the exported file
+const FORMAT_NAMES = { gif: 'GIF', webm: 'WebM', both: 'GIF + WebM' };
 
 const PRESETS = {
   'email-gif': { format: 'gif', fps: 10, width: 480, gifColors: 128 },
@@ -31,8 +33,13 @@ const state = {
   width: 480,
   gifColors: 256,
   webmQuality: 'medium',
+  corners: 'rounded', // 'rounded' | 'none'
   busy: false,
 };
+
+// Which encoders the current format needs.
+const wantsGif = () => state.format !== 'webm';
+const wantsWebm = () => state.format !== 'gif';
 
 const inViewer = 'claude' in window;
 const video = $('video');
@@ -100,7 +107,7 @@ async function loadSource(blob, name, fromRecording = false) {
   $('editor').hidden = false;
   document.body.classList.add('has-video');
   $('exportBtn').disabled = false;
-  $('result').hidden = true;
+  clearResults();
   video.currentTime = 0;
   renderTrim();
   renderCrop();
@@ -122,19 +129,15 @@ function startOver() {
   video.pause();
   for (const v of [video, work]) { v.removeAttribute('src'); v.load(); }
   if (state.url) URL.revokeObjectURL(state.url);
-  if (resultUrl) URL.revokeObjectURL(resultUrl);
+  clearResults();
   Object.assign(state, { url: null, duration: 0, start: 0, end: 0, fromRecording: false });
-  resultUrl = null;
-  resultBlob = null;
 
-  $('result').hidden = true;
-  $('resultMedia').replaceChildren();
   $('exportBtn').disabled = true;
   $('gifEst').textContent = $('webmEst').textContent = '–';
   $('gifBar').style.width = $('webmBar').style.width = '0';
   $('estStatus').textContent = $('estNote').textContent = '';
   $('warnInfo').hidden = true;
-  for (const el of ['sourceError', 'exportError', 'saveMsg']) hideError($(el));
+  for (const el of ['sourceError', 'exportError']) hideError($(el));
   $('editor').hidden = true;
   $('recView').hidden = true;
   $('empty').hidden = false;
@@ -146,7 +149,7 @@ function startOver() {
 $('startOverBtn').addEventListener('click', () => {
   if (state.busy) return;
   // A recording exists only in this tab, so check before throwing it away.
-  if (state.fromRecording && !resultBlob && !confirm('Discard this recording? It isn’t saved anywhere.')) return;
+  if (state.fromRecording && !results.length && !confirm('Discard this recording? It isn’t saved anywhere.')) return;
   startOver();
 });
 
@@ -415,9 +418,20 @@ function renderCrop() {
   el.style.width = `${c.w * 100}%`;
   el.style.height = `${c.h * 100}%`;
   el.classList.toggle('full', c.w > 0.999 && c.h > 0.999);
+  renderCropRadius();
   $('cropSize').textContent = `${Math.round(c.w * state.vw)} × ${Math.round(c.h * state.vh)}`;
   renderSettings();
 }
+
+// Shows the export's corner radius on the crop box, scaled from output pixels to screen pixels.
+function renderCropRadius() {
+  const el = $('crop');
+  const { w, sw, r } = outputDims();
+  const shown = $('frame').getBoundingClientRect().width;
+  el.classList.toggle('rounded', r > 0);
+  el.style.borderRadius = r > 0 && state.vw ? `${(r * (sw / w) * shown) / state.vw}px` : '';
+}
+window.addEventListener('resize', () => { if (state.duration) renderCropRadius(); });
 
 // Largest centred crop with the given width/height ratio, or the full frame for "Free".
 function setAspect(aspect) {
@@ -527,30 +541,40 @@ function outputDims() {
   // Even sizes keep VP8/VP9 happy and cost nothing for GIF.
   w = Math.max(2, Math.round(w / 2) * 2);
   h = Math.max(2, Math.round(h / 2) * 2);
-  return { w, h, sx: state.crop.x * state.vw, sy: state.crop.y * state.vh, sw, sh };
+  const r = state.corners === 'rounded' ? Math.min(CORNER_RADIUS, w / 2, h / 2) : 0;
+  return { w, h, r, sx: state.crop.x * state.vw, sy: state.crop.y * state.vh, sw, sh };
 }
 
 const frameCount = () => Math.max(1, Math.floor((state.end - state.start) * state.fps));
 
 function renderSettings() {
   for (const b of $('formatSeg').children) b.classList.toggle('on', b.dataset.format === state.format);
+  for (const b of $('cornerSeg').children) b.classList.toggle('on', b.dataset.corners === state.corners);
   $('fpsSel').value = String(state.fps);
   $('widthSel').value = String(state.width);
   $('colorsSel').value = String(state.gifColors);
   $('qualitySel').value = state.webmQuality;
-  $('gifOpts').hidden = state.format !== 'gif';
-  $('webmOpts').hidden = state.format !== 'webm';
-  $('exportLabel').textContent = `Export ${state.format === 'gif' ? 'GIF' : 'WebM'}`;
-  for (const row of document.querySelectorAll('.est-row')) row.classList.toggle('on', row.dataset.format === state.format);
+  $('gifOpts').hidden = !wantsGif();
+  $('webmOpts').hidden = !wantsWebm();
+  $('exportLabel').textContent = `Export ${FORMAT_NAMES[state.format]}`;
+  for (const row of document.querySelectorAll('.est-row')) {
+    row.classList.toggle('on', row.dataset.format === 'gif' ? wantsGif() : wantsWebm());
+  }
+  $('cornerHint').textContent = state.corners === 'rounded'
+    ? (wantsWebm()
+      ? 'The corners are see-through. WebM keeps them see-through in Chrome, Edge and Firefox.'
+      : 'The corners are see-through, so the clip sits on any background.')
+    : '';
+  if (state.duration) renderCropRadius();
 
   if (!state.duration) { $('outInfo').textContent = 'Load a video to get started.'; return; }
   const { w, h } = outputDims();
   $('outInfo').textContent = `Output ${w} × ${h} px · ${state.fps} fps · ${frameCount()} frames`;
 
   const warnings = [];
-  if (state.format === 'gif' && state.fps > 30) warnings.push('Many viewers play GIFs above 30 fps unevenly. Pick 30 fps or less, or use WebM.');
+  if (wantsGif() && state.fps > 30) warnings.push('Many viewers play GIFs above 30 fps unevenly. Pick 30 fps or less, or use WebM.');
   if (state.end - state.start > LONG_CLIP) warnings.push(`This clip is over ${LONG_CLIP} s. Expect a large file and a slower export.`);
-  if (state.format === 'webm' && !webmSupported()) warnings.push('This browser can’t encode WebM. Use Chrome, Edge or Firefox.');
+  if (wantsWebm() && !webmSupported()) warnings.push('This browser can’t encode WebM. Use Chrome, Edge or Firefox.');
   $('warnInfo').hidden = !warnings.length;
   $('warnInfo').textContent = warnings.join(' ');
 }
@@ -567,6 +591,10 @@ $('formatSeg').addEventListener('click', (e) => {
   if (!b || state.busy) return;
   state.format = b.dataset.format;
   renderSettings(); // format alone doesn't change either estimate
+});
+$('cornerSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (b && !state.busy) onSettingChange({ corners: b.dataset.corners });
 });
 $('fpsSel').addEventListener('change', (e) => onSettingChange({ fps: +e.target.value }));
 $('widthSel').addEventListener('change', (e) => onSettingChange({ width: +e.target.value }));
@@ -610,14 +638,60 @@ function makeCanvas(w, h) {
   return { canvas, ctx: canvas.getContext('2d', { willReadFrequently: true }) };
 }
 
+function roundedRectPath(ctx, w, h, r) {
+  ctx.beginPath();
+  if (ctx.roundRect) { ctx.roundRect(0, 0, w, h, r); return; }
+  ctx.moveTo(r, 0);
+  ctx.arcTo(w, 0, w, h, r);
+  ctx.arcTo(w, h, 0, h, r);
+  ctx.arcTo(0, h, 0, 0, r);
+  ctx.arcTo(0, 0, w, 0, r);
+  ctx.closePath();
+}
+
 async function renderFrames({ from, count, fps, dims, ctx, signal, onFrame }) {
   const last = Math.min(state.end, work.duration) - 0.001;
   for (let i = 0; i < count; i++) {
     if (signal.aborted) throw abortError();
     await seek(work, Math.min(from + i / fps, last));
+    ctx.clearRect(0, 0, dims.w, dims.h);
+    if (dims.r) {
+      // Everything outside the rounded rectangle stays transparent.
+      ctx.save();
+      roundedRectPath(ctx, dims.w, dims.h, dims.r);
+      ctx.clip();
+    }
     ctx.drawImage(work, dims.sx, dims.sy, dims.sw, dims.sh, 0, 0, dims.w, dims.h);
+    if (dims.r) ctx.restore();
     await onFrame(i);
   }
+}
+
+// The encoders a job needs, all reading the same canvas, so "Both" renders each frame once.
+async function createSinks(formats, dims, fps, canvas) {
+  const rounded = dims.r > 0;
+  const sinks = {};
+  if (formats.includes('gif')) {
+    sinks.gif = createGifSink({ width: dims.w, height: dims.h, fps, colors: state.gifColors, transparent: rounded });
+  }
+  if (formats.includes('webm')) {
+    sinks.webm = await createWebmSink({
+      width: dims.w, height: dims.h, fps, quality: state.webmQuality, canvas, alpha: rounded,
+    });
+  }
+  return {
+    async add(ctx) {
+      sinks.gif?.add(ctx);
+      await sinks.webm?.add();
+    },
+    async finish() {
+      const out = {};
+      if (sinks.gif) out.gif = sinks.gif.finish();
+      if (sinks.webm) out.webm = await sinks.webm.finish();
+      return out;
+    },
+    close() { sinks.webm?.close(); },
+  };
 }
 
 /* ---------- Size estimate ---------- */
@@ -655,23 +729,17 @@ async function runEstimate() {
     const est = await runExclusive(async () => {
       if (ac.signal.aborted) throw abortError();
       const { canvas, ctx } = makeCanvas(dims.w, dims.h);
-      const gif = createGifSink({ width: dims.w, height: dims.h, fps, colors: state.gifColors });
-      let webm = null;
-      if (webmSupported()) {
-        try { webm = await createWebmSink({ width: dims.w, height: dims.h, fps, quality: state.webmQuality }); } catch { webm = null; }
-      }
+      // Always estimate both, so the bars compare them whichever format is picked.
+      let sinks;
+      try { sinks = await createSinks(webmSupported() ? ['gif', 'webm'] : ['gif'], dims, fps, canvas); }
+      catch { sinks = await createSinks(['gif'], dims, fps, canvas); }
       try {
-        await renderFrames({
-          from, count: n, fps, dims, ctx, signal: ac.signal,
-          onFrame: async () => { gif.add(ctx); if (webm) await webm.add(canvas); },
-        });
+        await renderFrames({ from, count: n, fps, dims, ctx, signal: ac.signal, onFrame: () => sinks.add(ctx) });
+        const out = await sinks.finish();
         const scale = total / n;
-        return {
-          gif: gif.finish().size * scale,
-          webm: webm ? (await webm.finish()).size * scale : null,
-        };
+        return { gif: out.gif.size * scale, webm: out.webm ? out.webm.size * scale : null };
       } finally {
-        webm?.close();
+        sinks.close();
       }
     });
     if (ac.signal.aborted) return;
@@ -695,8 +763,8 @@ function renderEstimate({ gif, webm }) {
 /* ---------- Export ---------- */
 
 let exportAbort = null;
-let resultUrl = null;
-let resultBlob = null;
+// Each exported file: { format, blob, url, file }.
+let results = [];
 
 function setBusy(busy) {
   state.busy = busy;
@@ -718,7 +786,8 @@ async function exportClip() {
   video.pause();
 
   const dims = outputDims();
-  const { fps, format } = state;
+  const { fps } = state;
+  const formats = state.format === 'both' ? ['gif', 'webm'] : [state.format];
   const count = frameCount();
   const ac = new AbortController();
   exportAbort = ac;
@@ -726,27 +795,25 @@ async function exportClip() {
   progress(0, 'Starting…');
 
   try {
-    const blob = await runExclusive(async () => {
+    const blobs = await runExclusive(async () => {
       const { canvas, ctx } = makeCanvas(dims.w, dims.h);
-      const sink = format === 'gif'
-        ? createGifSink({ width: dims.w, height: dims.h, fps, colors: state.gifColors })
-        : await createWebmSink({ width: dims.w, height: dims.h, fps, quality: state.webmQuality });
+      const sinks = await createSinks(formats, dims, fps, canvas);
       try {
         await renderFrames({
           from: state.start, count, fps, dims, ctx, signal: ac.signal,
           onFrame: async (i) => {
-            if (format === 'gif') sink.add(ctx); else await sink.add(canvas);
+            await sinks.add(ctx);
             progress((i + 1) / count, `Frame ${i + 1} of ${count}`);
             if (i % 3 === 2) await tick();
           },
         });
         progress(1, 'Finishing…');
-        return await sink.finish();
+        return await sinks.finish();
       } finally {
-        sink.close?.();
+        sinks.close();
       }
     });
-    showResult(blob, format, dims, fps);
+    showResults(formats.map((format) => ({ format, blob: blobs[format] })), dims, fps);
   } catch (e) {
     if (e.name !== 'AbortError') showError($('exportError'), e.message || 'Export failed.');
   } finally {
@@ -755,38 +822,11 @@ async function exportClip() {
   }
 }
 
-function showResult(blob, format, dims, fps) {
-  if (resultUrl) URL.revokeObjectURL(resultUrl);
-  resultUrl = URL.createObjectURL(blob);
-  resultBlob = blob;
-  hideError($('saveMsg'));
-  const media = $('resultMedia');
-  media.replaceChildren();
-  // On a phone the result lands below the fold. Scroll once the preview has its size, so the
-  // Download button ends up on screen rather than being pushed down by the image.
-  const reveal = () => $('downloadLink').scrollIntoView({
-    behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-    block: 'nearest',
-  });
-  if (format === 'gif') {
-    const img = new Image();
-    img.onload = reveal;
-    img.src = resultUrl;
-    img.alt = 'Exported GIF preview';
-    media.append(img);
-  } else {
-    const v = document.createElement('video');
-    v.addEventListener('loadeddata', reveal, { once: true });
-    Object.assign(v, { src: resultUrl, autoplay: true, loop: true, muted: true, playsInline: true });
-    media.append(v);
-  }
-  const ext = format === 'gif' ? 'gif' : 'webm';
-  $('resultMeta').textContent = `${fmtBytes(blob.size)} · ${dims.w} × ${dims.h} · ${fps} fps · ${(state.end - state.start).toFixed(1)} s`;
-  $('downloadLink').href = resultUrl;
-  $('downloadLink').download = `${state.name}.${ext}`;
-  $('downloadLabel').textContent = `Download ${format === 'gif' ? 'GIF' : 'WebM'}`;
-  setupSaveToPhotos(blob, format, `${state.name}.${ext}`);
-  $('result').hidden = false;
+function clearResults() {
+  for (const r of results) URL.revokeObjectURL(r.url);
+  results = [];
+  $('result').replaceChildren();
+  $('result').hidden = true;
 }
 
 /* ---------- Save to Photos (phones) ---------- */
@@ -795,65 +835,105 @@ function showResult(blob, format, dims, fps) {
 // photo library: on iPhone it offers "Save Image" or "Save Video", on Android the photos app.
 // iPadOS reports itself as a Mac, so a touch-capable "Mac" counts too.
 const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-let shareFile = null;
 
-function setupSaveToPhotos(blob, format, filename) {
-  const ios = isIOS();
-  const btn = $('savePhotosBtn');
-  const hint = $('savePhotosHint');
-  shareFile = new File([blob], filename, { type: blob.type });
+// What the phone can do with this file: 'photos', 'webm-not-in-photos' or null (plain download).
+function photosRoute(file, format) {
   let canShare = false;
-  try { canShare = touchDevice && !!navigator.canShare?.({ files: [shareFile] }); } catch { canShare = false; }
-
-  if (canShare && ios && format === 'webm') {
-    // Photos on iPhone can't store WebM; saving would only offer Files.
-    btn.hidden = true;
-    hint.hidden = false;
-    hint.textContent = 'iPhone Photos can’t store WebM videos. To save to Photos, export as GIF.';
-  } else if (canShare) {
-    btn.hidden = false;
-    hint.hidden = false;
-    hint.textContent = ios
-      ? `In the menu that opens, choose ${format === 'gif' ? 'Save Image' : 'Save Video'}.`
-      : 'In the menu that opens, choose your photos or gallery app.';
-  } else {
-    btn.hidden = true;
-    hint.hidden = true;
-  }
-  // When Save to Photos is the main way out, the download becomes the quieter option.
-  $('downloadLink').classList.toggle('primary', btn.hidden);
-  $('downloadLink').classList.toggle('secondary', !btn.hidden);
-  $('downloadLabel').textContent = btn.hidden ? `Download ${format === 'gif' ? 'GIF' : 'WebM'}` : 'Save to Files';
+  try { canShare = touchDevice && !!navigator.canShare?.({ files: [file] }); } catch { canShare = false; }
+  if (!canShare) return null;
+  // Photos on iPhone can't store WebM; sharing would only offer Files.
+  return isIOS() && format === 'webm' ? 'webm-not-in-photos' : 'photos';
 }
 
-$('savePhotosBtn').addEventListener('click', async () => {
-  if (!shareFile) return;
-  hideError($('saveMsg'));
-  try {
-    await navigator.share({ files: [shareFile] });
-  } catch (err) {
-    if (err?.name === 'AbortError') return; // closed the menu without choosing
-    showError($('saveMsg'), 'Couldn’t open the save menu. Use Save to Files instead.');
-  }
-});
+function el(tag, props = {}, children = []) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+}
+const icon = (name) => {
+  const i = document.createElement('i');
+  i.setAttribute('data-lucide', name);
+  return i;
+};
 
-// In the artifact viewer, download links are inert; files go through the downloads capability.
-$('downloadLink').addEventListener('click', async (e) => {
-  if (!inViewer) return;
-  e.preventDefault();
-  const msg = $('saveMsg');
-  hideError(msg);
-  const downloads = await window.claude.use('downloads');
-  if (!downloads) { showError(msg, 'Saving files isn’t available in this view.'); return; }
-  try {
-    await downloads.save({ filename: $('downloadLink').download, data: resultBlob });
-  } catch (err) {
-    if (err?.code === 'declined') return;
-    showError(msg, err?.code === 'rate_limited'
-      ? 'A save prompt is already open. Finish it, then try again.'
-      : 'Couldn’t save the file here.');
+function resultCard(r, dims, fps, labelled) {
+  const name = FORMAT_NAMES[r.format];
+  const media = el('div', { className: 'result-media' });
+  const loaded = new Promise((resolve) => {
+    if (r.format === 'gif') {
+      const img = el('img', { alt: `Exported ${name} preview`, onload: resolve, onerror: resolve });
+      img.src = r.url;
+      media.append(img);
+    } else {
+      const v = el('video', { autoplay: true, loop: true, muted: true, playsInline: true });
+      v.addEventListener('loadeddata', resolve, { once: true });
+      v.addEventListener('error', resolve, { once: true });
+      v.src = r.url;
+      media.append(v);
+    }
+  });
+
+  const message = el('p', { className: 'error', hidden: true });
+  const download = el('a', { className: 'btn block primary', href: r.url, download: r.file.name },
+    [icon('download'), el('span', { textContent: `Download ${name}` })]);
+  const card = el('div', { className: 'result-item' }, [
+    labelled ? el('span', { className: 'label', textContent: name }) : '',
+    media,
+    el('p', { className: 'help', textContent: `${fmtBytes(r.blob.size)} · ${dims.w} × ${dims.h} · ${fps} fps · ${(state.end - state.start).toFixed(1)} s` }),
+  ]);
+
+  const route = photosRoute(r.file, r.format);
+  if (route === 'photos') {
+    const save = el('button', { className: 'btn primary block', type: 'button' },
+      [icon('image-down'), el('span', { textContent: labelled ? `Save ${name} to Photos` : 'Save to Photos' })]);
+    save.addEventListener('click', async () => {
+      hideError(message);
+      try {
+        await navigator.share({ files: [r.file] });
+      } catch (err) {
+        if (err?.name === 'AbortError') return; // closed the menu without choosing
+        showError(message, 'Couldn’t open the save menu. Use Save to Files instead.');
+      }
+    });
+    const hint = isIOS()
+      ? `In the menu that opens, choose ${r.format === 'gif' ? 'Save Image' : 'Save Video'}.`
+      : 'In the menu that opens, choose your photos or gallery app.';
+    // When Save to Photos is the main way out, the download becomes the quieter option.
+    download.className = 'btn block secondary';
+    download.lastChild.textContent = 'Save to Files';
+    card.append(save, el('p', { className: 'help', textContent: hint }));
+  } else if (route === 'webm-not-in-photos') {
+    card.append(el('p', { className: 'help', textContent: 'iPhone Photos can’t store WebM videos. To save to Photos, use the GIF.' }));
   }
-});
+  card.append(download, message);
+  return { card, loaded, download };
+}
+
+function showResults(items, dims, fps) {
+  clearResults();
+  const labelled = items.length > 1;
+  const cards = items.map((item) => {
+    const ext = item.format === 'gif' ? 'gif' : 'webm';
+    const r = {
+      ...item,
+      url: URL.createObjectURL(item.blob),
+      file: new File([item.blob], `${state.name}.${ext}`, { type: item.blob.type }),
+    };
+    results.push(r);
+    return resultCard(r, dims, fps, labelled);
+  });
+  $('result').append(...cards.map((c) => c.card));
+  $('result').hidden = false;
+  window.lucide?.createIcons();
+  // On a phone the result lands below the fold. Scroll once the previews have their size, so the
+  // last button ends up on screen rather than being pushed down by the images.
+  Promise.all(cards.map((c) => c.loaded)).then(() => {
+    cards.at(-1).download.scrollIntoView({
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'nearest',
+    });
+  });
+}
 
 $('exportBtn').addEventListener('click', exportClip);
 $('cancelBtn').addEventListener('click', () => exportAbort?.abort());

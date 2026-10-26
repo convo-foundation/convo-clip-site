@@ -250,6 +250,8 @@ select:disabled, input:disabled { opacity: var(--opacity-muted); }
   cursor: move;
 }
 .crop.full { box-shadow: none; outline-color: color-mix(in srgb, var(--color-base-white) 50%, transparent); }
+/* With rounded corners on, dim the cut-off corners even when the crop is the whole frame. */
+.crop.full.rounded { box-shadow: 0 0 0 9999px color-mix(in srgb, var(--color-base-black) 60%, transparent); outline-color: var(--felt-primary); }
 .crop .h {
   position: absolute;
   width: 16px; height: 16px;
@@ -355,8 +357,9 @@ select:disabled, input:disabled { opacity: var(--opacity-muted); }
 .prog-row { display: flex; justify-content: space-between; align-items: center; font-variant-numeric: tabular-nums; }
 
 /* ---------- Result ---------- */
-.result { display: flex; flex-direction: column; gap: var(--space-tight); padding-top: var(--felt-space-xs); }
+.result { display: flex; flex-direction: column; gap: var(--felt-space-s); padding-top: var(--felt-space-xs); }
 .result p { margin: 0; }
+.result-item { display: flex; flex-direction: column; gap: var(--space-tight); }
 .result-media {
   display: grid; place-items: center;
   overflow: hidden;

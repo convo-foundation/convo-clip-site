@@ -176,7 +176,17 @@
         <div class="segmented wide" id="formatSeg">
           <button type="button" data-format="gif" class="on">GIF</button>
           <button type="button" data-format="webm">WebM</button>
+          <button type="button" data-format="both">Both</button>
         </div>
+      </div>
+
+      <div class="field">
+        <span class="label">Corners</span>
+        <div class="segmented wide" id="cornerSeg">
+          <button type="button" data-corners="rounded" class="on">Rounded (20 px)</button>
+          <button type="button" data-corners="none">None</button>
+        </div>
+        <p class="help" id="cornerHint"></p>
       </div>
 
       <div class="field">
@@ -246,18 +256,12 @@
       </div>
       <p class="error" id="exportError" hidden></p>
 
-      <div class="result" id="result" hidden>
-        <div class="result-media" id="resultMedia"></div>
-        <p class="help" id="resultMeta"></p>
-        <button class="btn primary block" id="savePhotosBtn" type="button" hidden><i data-lucide="image-down"></i><span>Save to Photos</span></button>
-        <p class="help" id="savePhotosHint" hidden></p>
-        <a class="btn primary block" id="downloadLink" download><i data-lucide="download"></i><span id="downloadLabel">Download</span></a>
-        <p class="error" id="saveMsg" hidden></p>
-      </div>
+      <!-- One card per exported file, built by showResults() -->
+      <div class="result" id="result" hidden></div>
     </aside>
   </main>
 
-  <p class="app-version">Version v5 · Oct 25, 2026 8:13 PM CT</p>
+  <p class="app-version">Version v6 · Oct 26, 2026 9:28 AM CT</p>
   <script>{ const v = document.querySelector('.app-version'); if (v.textContent.includes('__')) v.textContent = 'Local preview (not published)'; }</script>
   <script>window.lucide?.createIcons();</script>
   <script type="module" src="app.js"></script>

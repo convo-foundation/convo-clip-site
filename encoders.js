@@ -1,19 +1,36 @@
 // Frame sinks: feed them one rendered canvas frame at a time, then call finish() for a Blob.
 import { GIFEncoder, quantize, applyPalette } from 'https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js';
-import { Muxer, ArrayBufferTarget } from 'https://cdn.jsdelivr.net/npm/webm-muxer@5.1.4/build/webm-muxer.mjs';
+import {
+  Output, WebMOutputFormat, BufferTarget, CanvasSource, canEncodeVideo,
+} from 'https://cdn.jsdelivr.net/npm/mediabunny@1.58.0/dist/bundles/mediabunny.min.mjs';
 
 /* ---------- GIF ---------- */
 
-export function createGifSink({ width, height, fps, colors }) {
+// GIF transparency is all or nothing per pixel; anything less than half opaque becomes see-through.
+const ALPHA_CUTOFF = 128;
+
+export function createGifSink({ width, height, fps, colors, transparent = false }) {
   const gif = GIFEncoder();
   const delay = Math.round(1000 / fps);
   return {
     add(ctx) {
       const { data } = ctx.getImageData(0, 0, width, height);
-      // A palette per frame keeps colours accurate when the scene changes.
-      const palette = quantize(data, colors, { format: 'rgb565' });
-      const index = applyPalette(data, palette, 'rgb565');
-      gif.writeFrame(index, width, height, { palette, delay });
+      if (!transparent) {
+        // A palette per frame keeps colours accurate when the scene changes.
+        const palette = quantize(data, colors, { format: 'rgb565' });
+        gif.writeFrame(applyPalette(data, palette, 'rgb565'), width, height, { palette, delay });
+        return;
+      }
+      // Keep the last palette slot for "see-through", and map the transparent pixels to it.
+      const opaque = quantize(data, Math.max(2, colors - 1), { format: 'rgb565' });
+      const index = applyPalette(data, opaque, 'rgb565');
+      const transparentIndex = opaque.length;
+      for (let i = 0, a = 3; i < index.length; i++, a += 4) {
+        if (data[a] < ALPHA_CUTOFF) index[i] = transparentIndex;
+      }
+      gif.writeFrame(index, width, height, {
+        palette: [...opaque, [0, 0, 0]], delay, transparent: true, transparentIndex,
+      });
     },
     finish() {
       gif.finish();
@@ -22,74 +39,48 @@ export function createGifSink({ width, height, fps, colors }) {
   };
 }
 
-/* ---------- WebM (WebCodecs + webm-muxer) ---------- */
+/* ---------- WebM (Mediabunny over WebCodecs) ---------- */
 
 // Bits per pixel per frame for each quality level.
 const BPP = { low: 0.05, medium: 0.1, high: 0.2 };
-const CODECS = [
-  { codec: 'vp09.00.10.08', mux: 'V_VP9' },
-  { codec: 'vp8', mux: 'V_VP8' },
-];
 
 export const webmSupported = () => 'VideoEncoder' in window && 'VideoFrame' in window;
 
-async function pickCodec(config) {
-  for (const c of CODECS) {
-    try {
-      const { supported } = await VideoEncoder.isConfigSupported({ ...config, codec: c.codec });
-      if (supported) return c;
-    } catch {
-      // try the next codec
-    }
-  }
-  return null;
-}
-
-export async function createWebmSink({ width, height, fps, quality }) {
+// Reads each frame from `canvas` when add() is called. With `alpha`, transparent pixels stay
+// transparent (VP8/VP9 carry a separate alpha layer that Chrome, Edge and Firefox play).
+export async function createWebmSink({ width, height, fps, quality, canvas, alpha = false }) {
   if (!webmSupported()) throw new Error('This browser can’t encode WebM. Use Chrome, Edge or Firefox.');
   const bitrate = Math.max(150_000, Math.round(width * height * fps * BPP[quality]));
-  const config = { width, height, bitrate, framerate: fps };
-  const picked = await pickCodec(config);
-  if (!picked) throw new Error('This browser can’t encode VP9 or VP8 at this size.');
+  let codec = null;
+  for (const c of ['vp9', 'vp8']) {
+    if (await canEncodeVideo(c, { width, height, bitrate })) { codec = c; break; }
+  }
+  if (!codec) throw new Error('This browser can’t encode VP9 or VP8 at this size.');
 
-  const target = new ArrayBufferTarget();
-  const muxer = new Muxer({
-    target,
-    video: { codec: picked.mux, width, height, frameRate: fps },
-    firstTimestampBehavior: 'offset',
+  const output = new Output({ format: new WebMOutputFormat(), target: new BufferTarget() });
+  const source = new CanvasSource(canvas, {
+    codec,
+    bitrate,
+    alpha: alpha ? 'keep' : 'discard',
+    keyFrameInterval: 2,
   });
-  let error = null;
-  const encoder = new VideoEncoder({
-    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-    error: (e) => { error = e; },
-  });
-  encoder.configure({ ...config, codec: picked.codec });
+  output.addVideoTrack(source, { frameRate: fps });
+  await output.start();
 
-  const frameUs = 1e6 / fps;
-  const keyEvery = Math.max(1, Math.round(fps * 2));
   let i = 0;
-
   return {
-    async add(canvas) {
-      if (error) throw error;
-      const frame = new VideoFrame(canvas, { timestamp: Math.round(i * frameUs), duration: Math.round(frameUs) });
-      encoder.encode(frame, { keyFrame: i % keyEvery === 0 });
-      frame.close();
+    async add() {
+      // The frame is captured from the canvas synchronously; awaiting applies back-pressure.
+      await source.add(i / fps, 1 / fps);
       i++;
-      // Back-pressure so long clips don't queue hundreds of frames in memory.
-      while (encoder.encodeQueueSize > 8) {
-        await new Promise((r) => encoder.addEventListener('dequeue', r, { once: true }));
-      }
     },
     async finish() {
-      await encoder.flush();
-      if (error) throw error;
-      encoder.close();
-      muxer.finalize();
-      return new Blob([target.buffer], { type: 'video/webm' });
+      source.close();
+      await output.finalize();
+      return new Blob([output.target.buffer], { type: 'video/webm' });
     },
     close() {
-      if (encoder.state !== 'closed') encoder.close();
+      if (output.state === 'started' || output.state === 'pending') output.cancel().catch(() => {});
     },
   };
 }
