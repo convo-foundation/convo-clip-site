@@ -32,6 +32,7 @@ const state = {
   fps: 12,
   width: 480,
   gifColors: 256,
+  gifDither: true,
   webmQuality: 'medium',
   corners: 'rounded', // 'rounded' | 'none'
   busy: false,
@@ -550,6 +551,7 @@ const frameCount = () => Math.max(1, Math.floor((state.end - state.start) * stat
 function renderSettings() {
   for (const b of $('formatSeg').children) b.classList.toggle('on', b.dataset.format === state.format);
   for (const b of $('cornerSeg').children) b.classList.toggle('on', b.dataset.corners === state.corners);
+  for (const b of $('ditherSeg').children) b.classList.toggle('on', (b.dataset.dither === 'on') === state.gifDither);
   $('fpsSel').value = String(state.fps);
   $('widthSel').value = String(state.width);
   $('colorsSel').value = String(state.gifColors);
@@ -591,6 +593,10 @@ $('formatSeg').addEventListener('click', (e) => {
   if (!b || state.busy) return;
   state.format = b.dataset.format;
   renderSettings(); // format alone doesn't change either estimate
+});
+$('ditherSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (b && !state.busy) onSettingChange({ gifDither: b.dataset.dither === 'on' });
 });
 $('cornerSeg').addEventListener('click', (e) => {
   const b = e.target.closest('button');
@@ -672,7 +678,7 @@ async function createSinks(formats, dims, fps, canvas) {
   const rounded = dims.r > 0;
   const sinks = {};
   if (formats.includes('gif')) {
-    sinks.gif = createGifSink({ width: dims.w, height: dims.h, fps, colors: state.gifColors, transparent: rounded });
+    sinks.gif = createGifSink({ width: dims.w, height: dims.h, fps, colors: state.gifColors, transparent: rounded, dither: state.gifDither });
   }
   if (formats.includes('webm')) {
     sinks.webm = await createWebmSink({

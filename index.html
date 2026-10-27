@@ -225,6 +225,12 @@
           <option value="256" selected>256 (best)</option><option value="128">128</option>
           <option value="64">64</option><option value="32">32 (smallest)</option>
         </select>
+        <span class="label">Dithering</span>
+        <div class="segmented wide" id="ditherSeg">
+          <button type="button" data-dither="on" class="on">On</button>
+          <button type="button" data-dither="off">Off</button>
+        </div>
+        <p class="help">Smooths the colour bands GIFs get in walls, skies and skin. Files can be 2–3 times larger.</p>
       </div>
       <div class="field" id="webmOpts" hidden>
         <label class="label" for="qualitySel">Quality</label>
@@ -261,7 +267,7 @@
     </aside>
   </main>
 
-  <p class="app-version">Version v6 · Oct 26, 2026 9:28 AM CT</p>
+  <p class="app-version">Version v7 · Oct 27, 2026 7:55 AM CT</p>
   <script>{ const v = document.querySelector('.app-version'); if (v.textContent.includes('__')) v.textContent = 'Local preview (not published)'; }</script>
   <script>window.lucide?.createIcons();</script>
   <script type="module" src="app.js"></script>
