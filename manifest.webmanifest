@@ -8,11 +8,9 @@
   "background_color": "#fffbf9",
   "theme_color": "#fffbf9",
   "icons": [
-    {
-      "src": "https://brand.convo.io/cdn/v1/assets/app-icons/webflow/Convo_Symbol_Evergreen_258.png",
-      "sizes": "256x256",
-      "type": "image/png",
-      "purpose": "any"
-    }
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ]
 }

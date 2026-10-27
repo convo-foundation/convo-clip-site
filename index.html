@@ -5,11 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Convo Clip</title>
   <meta name="description" content="Turn a video into a GIF or WebM loop, entirely in your browser.">
-  <!-- Installable as a desktop app; icons come from the brand CDN -->
+  <!-- Installable as a desktop app. Convo Clip has its own icon so it isn't mistaken for Convo Now. -->
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#fffbf9">
-  <link rel="icon" href="https://brand.convo.io/cdn/v1/assets/app-icons/webflow/Convo_Symbol_Evergreen_32.png" sizes="32x32">
-  <link rel="apple-touch-icon" href="https://brand.convo.io/cdn/v1/assets/app-icons/webflow/Convo_Symbol_Evergreen_258.png">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="icons/icon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <!-- Convo brand tokens and fonts: linked, never copied -->
   <link rel="stylesheet" href="https://brand.convo.io/cdn/v1/brand.css">
   <link rel="stylesheet" href="styles.css">
@@ -277,7 +278,7 @@
     </aside>
   </main>
 
-  <p class="app-version">Version v8 · Oct 27, 2026 11:15 AM CT</p>
+  <p class="app-version">Version v9 · Oct 27, 2026 12:55 PM CT</p>
   <script>{ const v = document.querySelector('.app-version'); if (v.textContent.includes('__')) v.textContent = 'Local preview (not published)'; }</script>
   <script>window.lucide?.createIcons();</script>
   <script type="module" src="app.js"></script>
