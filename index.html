@@ -240,6 +240,16 @@
         </select>
       </div>
 
+      <div class="field">
+        <span class="label">Max file size</span>
+        <div class="segmented wide" id="maxSizeSeg">
+          <button type="button" data-max="0" class="on">Off</button>
+          <button type="button" data-max="5">5 MB</button>
+          <button type="button" data-max="10">10 MB</button>
+        </div>
+        <p class="help" id="maxSizeHint"></p>
+      </div>
+
       <p class="help" id="outInfo"></p>
       <p class="help warn" id="warnInfo" hidden></p>
 
@@ -267,7 +277,7 @@
     </aside>
   </main>
 
-  <p class="app-version">Version v7 · Oct 27, 2026 7:55 AM CT</p>
+  <p class="app-version">Version v8 · Oct 27, 2026 11:15 AM CT</p>
   <script>{ const v = document.querySelector('.app-version'); if (v.textContent.includes('__')) v.textContent = 'Local preview (not published)'; }</script>
   <script>window.lucide?.createIcons();</script>
   <script type="module" src="app.js"></script>

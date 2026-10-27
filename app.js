@@ -35,6 +35,7 @@ const state = {
   gifDither: true,
   webmQuality: 'medium',
   corners: 'rounded', // 'rounded' | 'none'
+  maxSizeMB: 0, // 0 = no limit
   busy: false,
 };
 
@@ -534,10 +535,10 @@ overlay.addEventListener('click', (e) => {
 
 /* ---------- Settings ---------- */
 
-function outputDims() {
+function outputDims(width = state.width) {
   const sw = state.crop.w * state.vw;
   const sh = state.crop.h * state.vh;
-  let w = state.width ? Math.min(state.width, sw) : sw;
+  let w = width ? Math.min(width, sw) : sw;
   let h = (w * sh) / sw;
   // Even sizes keep VP8/VP9 happy and cost nothing for GIF.
   w = Math.max(2, Math.round(w / 2) * 2);
@@ -546,12 +547,16 @@ function outputDims() {
   return { w, h, r, sx: state.crop.x * state.vw, sy: state.crop.y * state.vh, sw, sh };
 }
 
-const frameCount = () => Math.max(1, Math.floor((state.end - state.start) * state.fps));
+const frameCount = (fps = state.fps) => Math.max(1, Math.floor((state.end - state.start) * fps));
 
 function renderSettings() {
   for (const b of $('formatSeg').children) b.classList.toggle('on', b.dataset.format === state.format);
   for (const b of $('cornerSeg').children) b.classList.toggle('on', b.dataset.corners === state.corners);
   for (const b of $('ditherSeg').children) b.classList.toggle('on', (b.dataset.dither === 'on') === state.gifDither);
+  for (const b of $('maxSizeSeg').children) b.classList.toggle('on', +b.dataset.max === state.maxSizeMB);
+  $('maxSizeHint').textContent = state.maxSizeMB
+    ? `If the file would be bigger than ${state.maxSizeMB} MB, the width and frame rate are lowered until it fits. The settings above are the most it will use.`
+    : '';
   $('fpsSel').value = String(state.fps);
   $('widthSel').value = String(state.width);
   $('colorsSel').value = String(state.gifColors);
@@ -592,11 +597,19 @@ $('formatSeg').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b || state.busy) return;
   state.format = b.dataset.format;
-  renderSettings(); // format alone doesn't change either estimate
+  renderSettings(); // format alone doesn't change either estimate, only the size-limit note
+  if (lastEstimate) renderEstimate(lastEstimate);
 });
 $('ditherSeg').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (b && !state.busy) onSettingChange({ gifDither: b.dataset.dither === 'on' });
+});
+$('maxSizeSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b || state.busy) return;
+  state.maxSizeMB = +b.dataset.max;
+  renderSettings();
+  if (lastEstimate) renderEstimate(lastEstimate); // the limit only changes the note
 });
 $('cornerSeg').addEventListener('click', (e) => {
   const b = e.target.closest('button');
@@ -719,36 +732,44 @@ function scheduleEstimate() {
   estimateTimer = setTimeout(runEstimate, 450);
 }
 
-// Encodes a short window from the middle of the clip in both formats and scales up.
+let lastEstimate = null;
+
+// Encodes a short window from the middle of the clip and scales up to the whole clip.
+// Call inside runExclusive. Formats the browser can't encode come back as null.
+async function sampleSizes({ formats, dims, fps, signal }) {
+  const total = frameCount(fps);
+  const n = Math.min(total, Math.max(4, Math.round(fps * 2)));
+  const mid = (state.start + state.end) / 2;
+  const from = Math.max(state.start, mid - n / fps / 2);
+  const { canvas, ctx } = makeCanvas(dims.w, dims.h);
+  let sinks;
+  try { sinks = await createSinks(formats, dims, fps, canvas); }
+  catch { sinks = await createSinks(formats.filter((f) => f === 'gif'), dims, fps, canvas); }
+  try {
+    await renderFrames({ from, count: n, fps, dims, ctx, signal, onFrame: () => sinks.add(ctx) });
+    const out = await sinks.finish();
+    const scale = total / n;
+    return { gif: out.gif ? out.gif.size * scale : null, webm: out.webm ? out.webm.size * scale : null };
+  } finally {
+    sinks.close();
+  }
+}
+
 async function runEstimate() {
   if (state.busy || !state.duration) return;
   const ac = new AbortController();
   estimateAbort = ac;
   const dims = outputDims();
   const { fps } = state;
-  const total = frameCount();
-  const n = Math.min(total, Math.max(4, Math.round(fps * 2)));
-  const mid = (state.start + state.end) / 2;
-  const from = Math.max(state.start, mid - n / fps / 2);
 
   try {
-    const est = await runExclusive(async () => {
+    const est = await runExclusive(() => {
       if (ac.signal.aborted) throw abortError();
-      const { canvas, ctx } = makeCanvas(dims.w, dims.h);
       // Always estimate both, so the bars compare them whichever format is picked.
-      let sinks;
-      try { sinks = await createSinks(webmSupported() ? ['gif', 'webm'] : ['gif'], dims, fps, canvas); }
-      catch { sinks = await createSinks(['gif'], dims, fps, canvas); }
-      try {
-        await renderFrames({ from, count: n, fps, dims, ctx, signal: ac.signal, onFrame: () => sinks.add(ctx) });
-        const out = await sinks.finish();
-        const scale = total / n;
-        return { gif: out.gif.size * scale, webm: out.webm ? out.webm.size * scale : null };
-      } finally {
-        sinks.close();
-      }
+      return sampleSizes({ formats: webmSupported() ? ['gif', 'webm'] : ['gif'], dims, fps, signal: ac.signal });
     });
     if (ac.signal.aborted) return;
+    lastEstimate = est;
     renderEstimate(est);
   } catch (e) {
     if (e.name === 'AbortError') return;
@@ -763,7 +784,59 @@ function renderEstimate({ gif, webm }) {
   $('webmEst').textContent = webm ? `≈ ${fmtBytes(webm)}` : 'n/a';
   $('webmBar').style.width = webm ? `${(webm / max) * 100}%` : '0';
   $('estStatus').textContent = '';
-  $('estNote').textContent = webm ? '' : 'WebM encoding isn’t available in this browser.';
+  const notes = [];
+  if (!webm) notes.push('WebM encoding isn’t available in this browser.');
+  const picked = Math.max(wantsGif() ? gif : 0, wantsWebm() ? webm || 0 : 0);
+  if (state.maxSizeMB && picked > state.maxSizeMB * MB) {
+    notes.push(`Over ${state.maxSizeMB} MB at these settings. Export will lower the width or frame rate to fit.`);
+  }
+  $('estNote').textContent = notes.join(' ');
+}
+
+/* ---------- Max file size ---------- */
+
+const MB = 1024 * 1024;
+const FIT_MARGIN = 0.93; // aim a little under the limit, since the estimate is from a sample
+const FIT_WIDTHS = [1280, 960, 720, 640, 480, 320, 240];
+const FIT_FPS = [30, 24, 20, 15, 12, 10];
+const MIN_FIT_FPS = 10; // below this, motion looks choppy; shrink the width instead
+
+// Every width and frame rate up to the chosen ones, biggest output first.
+function fitCandidates() {
+  const top = outputDims();
+  const widths = [top.w, ...FIT_WIDTHS.filter((w) => w < top.w)];
+  const rates = [state.fps, ...FIT_FPS.filter((f) => f < state.fps && f >= MIN_FIT_FPS)];
+  const list = [];
+  for (const width of widths) {
+    for (const fps of rates) {
+      const dims = outputDims(width);
+      list.push({ dims, fps, score: dims.w * dims.h * fps });
+    }
+  }
+  // Same pixel rate: keep the sharper picture.
+  return list.sort((a, b) => b.score - a.score || b.dims.w - a.dims.w);
+}
+
+// Largest of a set of sizes in bytes, or of blobs.
+const biggest = (sizes) => Math.max(...Object.values(sizes).map((s) => s?.size ?? s ?? 0));
+
+// The first candidate after `from` whose pixel rate is at most `score` (the last one if none is).
+function candidateAtMost(candidates, score, from) {
+  const i = candidates.findIndex((c, j) => j > from && c.score <= score);
+  return i < 0 ? candidates.length - 1 : i;
+}
+
+// Finds the largest candidate that fits. File size grows roughly with pixels per second, so one
+// sample predicts the rest; a sample of the prediction checks it, a few rounds at most.
+async function fitToLimit({ candidates, formats, limit, signal }) {
+  let i = 0;
+  for (let round = 0; round < 3; round++) {
+    const { dims, fps, score } = candidates[i];
+    const size = biggest(await sampleSizes({ formats, dims, fps, signal }));
+    if (size <= limit * FIT_MARGIN || i === candidates.length - 1) return i;
+    i = candidateAtMost(candidates, score * (limit * FIT_MARGIN) / size, i);
+  }
+  return i;
 }
 
 /* ---------- Export ---------- */
@@ -791,40 +864,67 @@ async function exportClip() {
   estimateAbort?.abort();
   video.pause();
 
-  const dims = outputDims();
-  const { fps } = state;
   const formats = state.format === 'both' ? ['gif', 'webm'] : [state.format];
-  const count = frameCount();
+  const limit = state.maxSizeMB * MB;
   const ac = new AbortController();
   exportAbort = ac;
   setBusy(true);
   progress(0, 'Starting…');
 
+  const encode = async ({ dims, fps }, label = '') => {
+    const count = frameCount(fps);
+    const { canvas, ctx } = makeCanvas(dims.w, dims.h);
+    const sinks = await createSinks(formats, dims, fps, canvas);
+    try {
+      await renderFrames({
+        from: state.start, count, fps, dims, ctx, signal: ac.signal,
+        onFrame: async (i) => {
+          await sinks.add(ctx);
+          progress((i + 1) / count, `${label}Frame ${i + 1} of ${count}`);
+          if (i % 3 === 2) await tick();
+        },
+      });
+      progress(1, 'Finishing…');
+      return await sinks.finish();
+    } finally {
+      sinks.close();
+    }
+  };
+
   try {
-    const blobs = await runExclusive(async () => {
-      const { canvas, ctx } = makeCanvas(dims.w, dims.h);
-      const sinks = await createSinks(formats, dims, fps, canvas);
-      try {
-        await renderFrames({
-          from: state.start, count, fps, dims, ctx, signal: ac.signal,
-          onFrame: async (i) => {
-            await sinks.add(ctx);
-            progress((i + 1) / count, `Frame ${i + 1} of ${count}`);
-            if (i % 3 === 2) await tick();
-          },
-        });
-        progress(1, 'Finishing…');
-        return await sinks.finish();
-      } finally {
-        sinks.close();
+    const { blobs, pick, note } = await runExclusive(async () => {
+      if (!limit) {
+        const pick = { dims: outputDims(), fps: state.fps };
+        return { blobs: await encode(pick), pick, note: '' };
       }
+      const candidates = fitCandidates();
+      progress(0, `Finding the largest size under ${state.maxSizeMB} MB…`);
+      let i = await fitToLimit({ candidates, formats, limit, signal: ac.signal });
+      let blobs = await encode(candidates[i]);
+      // The fit is from a sample, so the whole clip can still come out over. Step down by
+      // how far over it went, a few times at most.
+      for (let tries = 0; tries < 3 && biggest(blobs) > limit && i < candidates.length - 1; tries++) {
+        i = candidateAtMost(candidates, candidates[i].score * (limit * FIT_MARGIN) / biggest(blobs), i);
+        const { dims, fps } = candidates[i];
+        blobs = await encode(candidates[i], `Over ${state.maxSizeMB} MB, trying ${dims.w} px at ${fps} fps. `);
+      }
+      const pick = candidates[i];
+      let note = '';
+      if (biggest(blobs) > limit) {
+        note = `Still over ${state.maxSizeMB} MB at ${pick.dims.w} px and ${pick.fps} fps. Shorten the clip or lower the colours to get it under.`;
+      } else if (i > 0) {
+        note = `Lowered to ${pick.dims.w} px and ${pick.fps} fps to fit under ${state.maxSizeMB} MB.`;
+      }
+      return { blobs, pick, note };
     });
-    showResults(formats.map((format) => ({ format, blob: blobs[format] })), dims, fps);
+    showResults(formats.map((format) => ({ format, blob: blobs[format] })), pick.dims, pick.fps, note);
   } catch (e) {
     if (e.name !== 'AbortError') showError($('exportError'), e.message || 'Export failed.');
   } finally {
     exportAbort = null;
     setBusy(false);
+    // Exporting cancels an estimate that was still running; finish it now.
+    if ($('estStatus').textContent) scheduleEstimate();
   }
 }
 
@@ -915,8 +1015,9 @@ function resultCard(r, dims, fps, labelled) {
   return { card, loaded, download };
 }
 
-function showResults(items, dims, fps) {
+function showResults(items, dims, fps, note = '') {
   clearResults();
+  if (note) $('result').append(el('p', { className: 'help result-note', textContent: note }));
   const labelled = items.length > 1;
   const cards = items.map((item) => {
     const ext = item.format === 'gif' ? 'gif' : 'webm';
